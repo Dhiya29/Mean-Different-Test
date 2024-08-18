@@ -1,0 +1,142 @@
+---
+title: "Wald Test"
+author: "Dhiya Ashilah Latief"
+date: "2024-02-01"
+output: html_document
+---
+## MEAN DIFFERENT TEST
+Mean Difference Test, atau yang lebih dikenal dengan Uji Beda Rata-Rata, adalah salah satu metode statistik yang digunakan untuk membandingkan rata-rata dari dua kelompok atau lebih. Uji ini bertujuan untuk mengetahui apakah terdapat perbedaan signifikan antara rata-rata kelompok-kelompok tersebut, atau apakah perbedaan yang diamati hanya terjadi karena kebetulan atau variasi sampel.
+
+#### INPUT DATA 
+```{r}
+data <- read.csv(file = "C:/Users/acer/Documents/tugas unpad/Tugas Akhir/SEMPRO/data cleaning.csv", header=T,sep=";",dec=".")
+head(data)
+```
+Pada kasus kali ini, akan digunakan data sekunder berupa nilai partisipasi kelompok tani di Kawasan Bandung Raya terhadap kegiatan urban farming. Di Kawasan Bandung raya kelompok tani dibagi menjadi empat berdasarkan corak usaha tani dan lokasinya, yaitu kelompok tani Subisten-Intraurban (A), Subsisten-Suburban (B), Komersial-Intraurban (C), dan Komersial-Suburban (D). Dan tingkat partisipasi yang digunakan adalah tingkat tertinggi yaitu "Kendali Warga" (X8) 
+```{r}
+data$group <- as.factor(data$group)
+str(data)
+```
+#### EKSPLORASI DATA
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Summary statistics berdasarkan kelompok
+summary_data <- data %>%
+  group_by(group) %>%
+  summarise(
+    mean_x = mean(X8),
+    median_x = median(X8),
+    min_x = min(X8),
+    max_x = max(X8),
+    sd_x = sd(X8)
+  )
+
+summary_data
+
+p1 <- ggplot(data) + 
+   aes(x = group, y = X8, fill = group) +
+   geom_boxplot() +
+   scale_fill_hue(direction = 1) +
+   theme_minimal() +
+   theme(legend.position = "none")
+p1
+```
+
+#### UJI ASUMSI
+Sebelum melakukan pengujian beda rata-rata menggunakan Uji-t ataupun anova, asumsi klasik diantaranya unit pengamatan independen, berdistribusi normal, dan homogenitas varians. Diantara asumsi tersebut keterpenuhan asumsi homogenitas varians sangar krusial dan perlu untuk dipenuhi.
+```{r}
+library(car)
+leveneTest(X8 ~ group, data=data)
+```
+Hasil diatas memberikan hasil bahwa data tidak dapat memenuhi asumsi homogenitas varians. maka penggunakan metode klasik seperti Anova dapat memberikan hasil yang keliru. Dengan demikian penerapan motode modifikasi wald test menggunakan kovarians white akan digunakan sebagai alternatif.
+
+#### PEMODELAN REGRESI DUMMY
+```{r}
+model <- lm(X8 ~ as.factor(group), data = data)
+summary(model)
+```
+#### PEMBENTUKAN KOVARIANS WHITE
+```{r}
+library(sandwich)
+
+# Menghitung matriks kovarian HC
+cov <- vcovHC(model, type = "HC0") 
+cov
+std_error <- sqrt(diag(cov))
+print(std_error)
+```
+#### PENGUJIAN SIMULTAN DENGAN MODIFIKASI WALD TEST
+```{r}
+# Matriks kontrast R,vektor b dan q
+R <- matrix(c(0, 0, 0,1, 0, 0, 0,1,0,0,0,1), nrow = 3)
+q <- c(0, 0, 0)
+b <- matrix(coef(model))
+```
+
+```{r}
+# Pengujian
+wald <- t(R%*%b-q) %*% solve(R%*%cov %*% t(R))%*%(R%*%b-q)  
+print("Nilai Chi-Kuadrat")
+wald
+
+alpha <- 0.05
+df <- 3
+J <- qchisq(1-alpha, df)
+p_value <- 1 - pchisq(wald, df)
+print("Nilai P-value")
+p_value
+```
+Hasil pengujian simultan diatas memberikan kesimpulan bahwa terdapat minimal satu kelompok yang berbeda. Untuk melihat lebih dalam kelompok mana saja yang berbeda maka akan dilakukan pengujian secara parsial terhadap kombinasi kelompok yang ada.
+
+#### PENGUJIAN PARSIAL DENGAN MODIFIKASI WALD TEST
+```{r}
+# Matriks kontrast R,vektor b dan q
+R1 <- matrix(c(0, 1, 0, 0), nrow = 1)
+R2 <- matrix(c(0, 0, 1, 0), nrow = 1)
+R3 <- matrix(c(0, 0, 0, 1), nrow = 1)
+R4 <- matrix(c(0, 1, -1, 0), nrow = 1)
+R5 <- matrix(c(0, 1, 0, -1), nrow = 1)
+R6 <- matrix(c(0, 0, 1, -1), nrow = 1)
+q1 <- c(0)
+```
+
+```{r}
+#Pengujian
+wald1 <- t(R1%*%b-q1) %*% solve(R1%*%cov %*% t(R1))%*%(R1%*%b-q1)  
+wald2 <- t(R2%*%b-q1) %*% solve(R2%*%cov %*% t(R2))%*%(R2%*%b-q1)  
+wald3 <- t(R3%*%b-q1) %*% solve(R3%*%cov %*% t(R3))%*%(R3%*%b-q1)  
+wald4 <- t(R4%*%b-q1) %*% solve(R4%*%cov %*% t(R4))%*%(R4%*%b-q1)  
+wald5 <- t(R5%*%b-q1) %*% solve(R5%*%cov %*% t(R5))%*%(R5%*%b-q1)  
+wald6 <- t(R6%*%b-q1) %*% solve(R6%*%cov %*% t(R6))%*%(R6%*%b-q1)  
+
+print("Nilai Chi-Kuadrat")
+wald1
+wald2
+wald3
+wald4
+wald5
+wald6
+
+df1 <- 1
+alpha <- 0.05
+J1 <- qchisq(1-alpha, df1)
+
+# Hitung p-value
+p_value1 <- 1 - pchisq(wald1, df1)
+p_value2 <- 1 - pchisq(wald2, df1)
+p_value3 <- 1 - pchisq(wald3, df1)
+p_value4 <- 1 - pchisq(wald4, df1)
+p_value5 <- 1 - pchisq(wald5, df1)
+p_value6 <- 1 - pchisq(wald6, df1)
+
+print("Nilai P-value")
+p_value1
+p_value2
+p_value3
+p_value4
+p_value5 
+p_value6 
+```
+Hasil pengujian parsial memberikan kesimpulan bahwa seluruh partisipasi kelompok subsisten baik di lokasi intraurban dan suburban berbeda terhadap kelompok komersial. Sedangkan dalam kelompok komersial partisipasi kelompok dilokasi intraurban dan suburban ditemukan sama. Hal ini bisa disebabkan oleh motivasi yang kuat diantra kelompok komersial sehingga lokasi tidak berpengaruh.
